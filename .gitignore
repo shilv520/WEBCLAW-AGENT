@@ -1,0 +1,31 @@
+# Virtual Environment
+venv/
+.env
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Logs and Screenshots
+logs/*.log
+screenshots/*.png
+states/*.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/
+
+# Keep placeholder files
+!logs/.gitkeep
+!screenshots/.gitkeep
+!states/.gitkeep

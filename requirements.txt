@@ -1,0 +1,49 @@
+# WebClaw DeepAgent - Week 1 Dependencies
+# 已调整版本以兼容你现有环境
+
+# Core Agent Framework - 使用兼容版本
+langchain>=0.1.17
+langchain-community>=0.0.36
+langchain-openai>=0.0.6
+langchain-core>=0.1.52
+
+# LangGraph (核心)
+langgraph>=0.0.20
+
+# Browser Automation
+playwright>=1.40.0
+
+# Data Models - 使用兼容版本
+pydantic>=2.0.0
+pydantic-settings>=2.3.4
+
+# Async Support
+asyncio-throttle>=1.0.0
+
+# Image Processing - 使用兼容版本
+pillow>=7.1.0,<12.0
+
+# Logging
+loguru>=0.7.0
+
+# Environment
+python-dotenv>=1.0.0
+
+# NumPy - 使用兼容版本（很多包需要numpy<2）
+numpy>=1.21,<2.0
+
+# API (兼容版本)
+fastapi>=0.100.0,<1.0
+uvicorn>=0.23.0
+starlette>=0.40.0,<1.0
+python-multipart>=0.0.18
+
+# HTTP (兼容版本)
+requests>=2.31.0,<2.32.0
+
+# Testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+
+# YAML (兼容版本)
+ruamel-yaml>=0.11.14,<0.18

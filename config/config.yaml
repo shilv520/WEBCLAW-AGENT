@@ -1,0 +1,23 @@
+# WebClaw DeepAgent Configuration
+
+# LLM Settings
+llm:
+  model: "deepseek-chat"  # Options: deepseek-chat, qwen-plus, gpt-4o, claude-sonnet-4.6
+  api_base: "https://api.deepseek.com"  # Change based on your model
+  temperature: 0.7
+  max_tokens: 4096
+
+# Browser Settings
+browser:
+  headless: false  # Set to true for production
+  timeout: 30000   # 30 seconds
+  screenshot_dir: "./screenshots"
+
+# Agent Settings
+agent:
+  max_steps: 20
+  log_dir: "./logs"
+
+# Storage
+storage:
+  state_dir: "./states"

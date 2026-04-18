@@ -174,20 +174,20 @@ async def run(self, task: str):
     await self.browser.start()
 
     while state["current_step"] < state["max_steps"]:
-        # Step 1: LLM决策
+        # 步骤1: LLM决策
         decision = await self._get_llm_decision(state)
 
-        # Step 2: 执行动作
+        # 步骤2: 执行动作
         result = await self._execute_action(
             decision["action"],
             decision["action_args"]
         )
 
-        # Step 3: 更新状态
+        # 步骤3: 更新状态
         state["thought"] = decision["thought"]
         state["action_result"] = result
 
-        # Step 4: 检查完成
+        # 步骤4: 检查完成
         if decision["is_complete"]:
             break
 
@@ -300,22 +300,22 @@ asyncio.run(run_task(args.task, args.model))
 
 ## 推荐学习路径
 
-### Day 1：基础理解
+### 阶段1：基础理解
 1. 阅读 `agents/state.py`（15分钟）
 2. 理解 TypedDict 和 Pydantic
 3. 尝试修改状态结构，添加新字段
 
-### Day 2：浏览器自动化
+### 阶段2：浏览器自动化
 1. 阅读 `tools/playwright_browser.py`（30分钟）
 2. 重点理解 async/await
 3. 运行 `tests/test_week1.py` 看浏览器操作
 
-### Day 3：Agent核心
+### 阶段3：Agent核心
 1. 阅读 `agents/executor.py`（40分钟）
 2. 理解 ReAct 循环
 3. 尝试修改 System Prompt
 
-### Day 4：运行和调试
+### 阶段4：运行和调试
 1. 阅读 `run.py`（15分钟）
 2. 配置 API Key，运行第一个任务
 3. 观察日志，理解执行流程
@@ -383,11 +383,12 @@ EXECUTOR_SYSTEM_PROMPT = """
 
 ## 下一步学习建议
 
-完成 Week 1 后，继续学习：
+完成 阶段1 后，继续学习：
 
-1. **Week 2**：LangGraph StateGraph（多节点编排）
-2. **Week 3**：Planner + Executor（多代理协作）
-3. **Week 4**：Skills系统（可复用技能模块）
+1. **阶段2-4**：LangGraph StateGraph（多节点编排）
+2. **阶段5-8**：RL 基础设施（RL环境、Policy网络）
+3. **阶段9-12**：RL 算法创新（Skill/Tool/Trajectory RL）
+4. **阶段13-16**：Permanent Memory（永久记忆系统）
 
 ---
 
@@ -400,3 +401,6 @@ EXECUTOR_SYSTEM_PROMPT = """
 | LangChain | https://python.langchain.com/docs/ |
 | Pydantic | https://docs.pydantic.dev/ |
 | pytest | https://docs.pytest.org/ |
+| 强化学习基础 | Deep RL Book（在线免费） |
+| Gymnasium | https://gymnasium.farama.org/ |
+| ChromaDB | https://www.trychroma.com/ |

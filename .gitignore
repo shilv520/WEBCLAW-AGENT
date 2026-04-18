@@ -1,5 +1,6 @@
 # Virtual Environment
 venv/
+.venv/
 .env
 
 # Python Cache
@@ -12,6 +13,12 @@ __pycache__/
 logs/*.log
 screenshots/*.png
 states/*.json
+
+# Trajectories (RL training data)
+trajectories/
+
+# Test files
+test.py
 
 # IDE
 .idea/

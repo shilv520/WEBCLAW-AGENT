@@ -1,139 +1,103 @@
 """
-Playwright Browser Tool - Core Browser Automation Engine
+Playwright 浏览器工具 - WebClaw DeepAgent 的浏览器自动化核心引擎
 
-This module provides a comprehensive Playwright-based browser automation
-tool that enables the agent to interact with web pages like a human user.
+本模块提供了基于 Playwright 的全面浏览器自动化工具，
+使代理能够像人类用户一样与网页交互。
 
-Key Features:
-- Page Navigation: Open URLs, navigate pages
-- Element Interaction: Click, type, scroll, press keys
-- Content Extraction: Get text, HTML, element info
-- Visual Capture: Screenshots for debugging and verification
-- State Tracking: Maintain current browser state
+核心功能:
+- 页面导航: 打开 URL、浏览页面
+- 元素交互: 点击、输入、滚动、按键
+- 内容提取: 获取文本、HTML、元素信息
+- 视觉捕获: 截图用于调试和验证
+- 状态追踪: 维护当前浏览器状态
 
-Architecture:
+架构:
     ┌─────────────────┐
     │  ExecutorAgent  │
     └─────────────────┘
-           │ calls
+           │ 调用
            ↓
     ┌─────────────────┐
     │ PlaywrightBrowser│
     │  ┌───────────┐  │
-    │  │ Playwright│  │ ← Browser automation library
-    │  │  Chromium │  │ ← Browser instance
-    │  │   Page    │  │ ← Web page context
+    │  │ Playwright│  │ ← 浏览器自动化库
+    │  │  Chromium │  │ ← 浏览器实例
+    │  │   Page    │  │ ← 网页上下文
     │  └───────────┘  │
     └─────────────────┘
            │
            ↓
     ┌─────────────────┐
     │   Web Page      │
-    │ (target site)   │
+    │ (目标网站)      │
     └─────────────────┘
 
-Async Programming Note:
-    All methods are async (using async/await) because:
-    - Browser operations are I/O bound (network, rendering)
-    - Async allows non-blocking execution
-    - Multiple operations can run concurrently
+异步编程说明:
+    所有方法都是 async（使用 async/await），因为:
+    - 浏览器操作是 I/O 密集型（网络、渲染）
+    - async 允许非阻塞执行
+    - 多个操作可以并发运行
 
-Author: WebClaw Team
-Version: 0.1.0
+作者: xdshilv
+版本: 0.1.0
 """
 
 import asyncio
-from typing import Optional, Dict, Any, List
+import sys
 from pathlib import Path
+
+# 确保 agents 目录在路径中，以便导入 BrowserState
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from typing import Optional, Dict, Any, List
 from loguru import logger
-from pydantic import BaseModel
 
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext
+from agents.state import BrowserState
 
 
 # ============================================================================
-# BROWSER STATE MODEL
-# ============================================================================
-
-class BrowserState(BaseModel):
-    """
-    Pydantic model representing the current browser state.
-
-    This model is used to track and validate browser state changes.
-    Pydantic provides automatic validation and serialization.
-
-    Attributes:
-        url (str): Current page URL.
-                   Empty if no page loaded.
-                   Example: "https://www.baidu.com"
-
-        title (str): Page title from <title> tag.
-                     Example: "百度一下，你就知道"
-
-        content (str): Text content preview from page body.
-                       Truncated for memory efficiency.
-                       Used for LLM context.
-
-        screenshot_path (str): Path to most recent screenshot.
-                               Empty if no screenshot taken.
-                               Used for verification and debugging.
-
-    Example:
-        >>> state = BrowserState(
-        ...     url="https://www.baidu.com",
-        ...     title="百度一下"
-        ... )
-        >>> print(state.url)
-        "https://www.baidu.com"
-    """
-    url: str = ""
-    title: str = ""
-    content: str = ""
-    screenshot_path: str = ""
-
-
-# ============================================================================
-# PLAYWRIGHT BROWSER CLASS
+# Playwright 浏览器类
 # ============================================================================
 
 class PlaywrightBrowser:
     """
-    Playwright-based browser automation tool for web agent execution.
+    基于 Playwright 的浏览器自动化工具，用于 Web 代理执行
 
-    This class wraps Playwright's async API to provide a clean, agent-friendly
-    interface for browser operations. It handles:
-    - Browser lifecycle (start/close)
-    - Page navigation and interaction
-    - Content extraction
-    - Visual capture (screenshots)
-    - State tracking
+    该类封装了 Playwright 的异步 API，提供简洁、代理友好的
+    浏览器操作接口。它处理:
+    - 浏览器生命周期（启动/关闭）
+    - 页面导航和交互
+    - 内容提取
+    - 视觉捕获（截图）
+    - 状态追踪
 
-    Usage Pattern:
-        1. Initialize with config (headless, timeout, etc.)
-        2. Call start() to launch browser
-        3. Perform operations (open_url, click, type, etc.)
-        4. Call close() to cleanup resources
+    使用模式:
+        1. 用配置初始化（headless、timeout 等）
+        2. 调用 start() 启动浏览器
+        3. 执行操作（open_url、click、type 等）
+        4. 调用 close() 清理资源
 
-    Key Design Decisions:
-        - Async methods: Non-blocking I/O for better performance
-        - Automatic screenshots: Capture state for debugging
-        - Error handling: Return error messages instead of raising
-        - State tracking: Maintain BrowserState for context
+    关键设计决策:
+        - 异步方法: 非阻塞 I/O 提高性能
+        - 自动截图: 捕获状态用于调试
+        - 错误处理: 返回错误消息而不是抛出异常
+        - 状态追踪: 维护 BrowserState 用于上下文
 
-    Attributes:
-        headless (bool): Run without visible browser window
-        timeout (int): Default operation timeout in milliseconds
-        screenshot_dir (Path): Directory for saving screenshots
+    属性:
+        headless (bool): 无可见浏览器窗口运行
+        timeout (int): 默认操作超时时间（毫秒）
+        screenshot_dir (Path): 保存截图的目录
 
-        playwright: Playwright instance (from async_playwright)
-        browser: Chromium browser instance
-        context: Browser context (isolated session)
-        page: Current web page
+        playwright: Playwright 实例（来自 async_playwright）
+        browser: Chromium 浏览器实例
+        context: 浏览器上下文（隔离会话）
+        page: 当前网页
 
-        current_state: Tracked browser state
-        step_count: Counter for naming screenshots
+        current_state: 追踪的浏览器状态
+        step_count: 用于命名截图的计数器
 
-    Example:
+    示例:
         >>> browser = PlaywrightBrowser(headless=False)
         >>> await browser.start()
         >>> await browser.open_url("https://www.baidu.com")
@@ -149,418 +113,429 @@ class PlaywrightBrowser:
         screenshot_dir: str = "./screenshots"
     ):
         """
-        Initialize the browser tool with configuration.
+        用配置初始化浏览器工具
 
-        Args:
-            headless (bool): Browser visibility mode.
-                             False: Show browser window (for debugging)
-                             True: Run invisibly (for production)
-                             Default: False (recommended for development)
+        参数:
+            headless (bool): 浏览器可见性模式
+                             False: 显示浏览器窗口（用于调试）
+                             True: 不可见运行（用于生产）
+                             默认: False（开发时推荐）
 
-            timeout (int): Default timeout for operations in milliseconds.
-                           Network operations will fail after this time.
-                           Default: 30000 (30 seconds)
-                           Increase for slow networks/sites
+            timeout (int): 操作的默认超时时间（毫秒）
+                           网络操作在此时间后失败
+                           默认: 30000（30秒）
+                           对于慢网络/网站需增加
 
-            screenshot_dir (str): Directory path for saving screenshots.
-                                  Screenshots are used for:
-                                  - Debugging failed actions
-                                  - Verification of results
-                                  - State graph construction
-                                  Default: "./screenshots"
+            screenshot_dir (str): 保存截图的目录路径
+                                  截图用于:
+                                  - 调试失败的动作
+                                  - 验证结果
+                                  - 状态图构建
+                                  默认: "./screenshots"
 
-        Configuration Storage:
-            These values are stored and used when start() is called.
-            They cannot be changed after browser starts.
+        配置存储:
+            这些值被存储并在 start() 调用时使用。
+            浏览器启动后无法更改。
 
-        Example:
-            >>> # Development mode (visible browser)
+        示例:
+            >>> # 开发模式（可见浏览器）
             >>> browser = PlaywrightBrowser(headless=False)
 
-            >>> # Production mode (invisible)
+            >>> # 生产模式（不可见）
             >>> browser = PlaywrightBrowser(headless=True, timeout=60000)
 
-            >>> # Custom screenshot location
+            >>> # 自定义截图位置
             >>> browser = PlaywrightBrowser(screenshot_dir="./debug_screenshots")
         """
-        # Store configuration
+        # 存储配置
         self.headless = headless
         self.timeout = timeout
         self.screenshot_dir = Path(screenshot_dir)
 
-        # Browser components (initialized in start())
-        # None indicates browser not started yet
-        self.playwright = None       # Playwright library instance
-        self.browser: Optional[Browser] = None   # Chromium browser
-        self.context: Optional[BrowserContext] = None  # Isolated session
-        self.page: Optional[Page] = None  # Current web page
+        # 浏览器组件（在 start() 中初始化）
+        # None 表示浏览器尚未启动
+        self.playwright = None       # Playwright 库实例
+        self.browser: Optional[Browser] = None   # Chromium 浏览器
+        self.context: Optional[BrowserContext] = None  # 隔离会话
+        self.page: Optional[Page] = None  # 当前网页
 
-        # State tracking
-        self.current_state = BrowserState()  # Current browser info
-        self.step_count = 0  # Counter for screenshot naming
+        # 状态追踪
+        self.current_state = BrowserState()  # 当前浏览器信息
+        self.step_count = 0  # 截图命名的计数器
 
-        logger.info(f"PlaywrightBrowser initialized (headless={headless})")
+        logger.info(f"PlaywrightBrowser 已初始化 (headless={headless})")
 
     # ------------------------------------------------------------------------
-    # Browser Lifecycle Methods
+    # 浏览器生命周期方法
     # ------------------------------------------------------------------------
 
     async def start(self) -> None:
         """
-        Start the browser and create necessary components.
+        启动浏览器并创建必要的组件
 
-        This method performs the full browser initialization sequence:
-            1. Create screenshot directory if needed
-            2. Launch Playwright library
-            3. Launch Chromium browser
-            4. Create browser context (isolated session)
-            5. Create new page
-            6. Set default timeout
+        该方法执行完整的浏览器初始化序列:
+            1. 如需要则创建截图目录
+            2. 启动 Playwright 库
+            3. 启动 Chromium 浏览器
+            4. 创建浏览器上下文（隔离会话）
+            5. 创建新页面
+            6. 设置默认超时
 
-        Browser Context Explanation:
-            A context is like a separate browser profile/session:
-            - Has its own cookies, cache, localStorage
-            - Multiple contexts can exist simultaneously
-            - Useful for multi-account scenarios
+        浏览器上下文说明:
+            上下文就像独立的浏览器配置/会话:
+            - 有自己的 cookies、缓存、localStorage
+            - 可以同时存在多个上下文
+            - 用于多账号场景
 
-        Browser Launch Args:
+        浏览器启动参数:
             --disable-blink-features=AutomationControlled:
-                Hides automation signature (anti-bot detection)
+                隐藏自动化签名（反机器人检测）
             --no-sandbox:
-                Needed for some Docker/Linux environments
+                某些 Docker/Linux 环境需要
             --disable-dev-shm-usage:
-                Prevents memory issues in containers
+                防止容器中的内存问题
 
-        User Agent Setting:
-            Custom user agent makes browser look like real Chrome,
-            helping avoid bot detection on protected sites.
+        User Agent 设置:
+            自定义 user agent 使浏览器看起来像真实 Chrome，
+            帮助在受保护网站避免机器人检测。
 
-        Error Handling:
-            If start() fails, subsequent operations will raise
-            RuntimeError("Browser not started").
+        错误处理:
+            如果 start() 失败，后续操作会抛出
+            RuntimeError("浏览器未启动")。
 
-        Example:
+        示例:
             >>> browser = PlaywrightBrowser()
             >>> await browser.start()
-            >>> # Browser is now ready for operations
-            >>> await browser.close()  # Always cleanup
+            >>> # 浏览器现在可以执行操作
+            >>> await browser.close()  # 总是清理
         """
-        # Prevent duplicate initialization
+        # 防止重复初始化
         if self.browser is not None:
-            logger.warning("Browser already started")
+            logger.warning("浏览器已启动")
             return
 
-        # Create screenshot directory
-        # parents=True: Create parent directories if needed
-        # exist_ok=True: Don't error if directory exists
+        # 创建截图目录
+        # parents=True: 如需要则创建父目录
+        # exist_ok=True: 目录已存在时不报错
         self.screenshot_dir.mkdir(parents=True, exist_ok=True)
 
-        # Launch Playwright library
-        # async_playwright() returns a context manager
-        self.playwright = await async_playwright.start()
+        # 启动 Playwright 库
+        # async_playwright() 返回上下文管理器，调用 start() 获取 Playwright 实例
+        self.playwright = await async_playwright().start()
 
-        # Launch Chromium browser
+        # 启动 Chromium 浏览器
         self.browser = await self.playwright.chromium.launch(
             headless=self.headless,
             args=[
-                # Hide automation signature (anti-bot)
+                # 隐藏自动化签名（反机器人）
                 '--disable-blink-features=AutomationControlled',
-                # Sandbox settings (for Docker/Linux)
+                # 沙箱设置（用于 Docker/Linux）
                 '--no-sandbox',
                 '--disable-dev-shm-usage',
             ]
         )
 
-        # Create browser context (isolated session)
-        # viewport: Window size for rendering
-        # user_agent: Browser identification string
+        # 创建浏览器上下文（隔离会话）
+        # viewport: 渲染的窗口大小
+        # user_agent: 浏览器识别字符串
         self.context = await self.browser.new_context(
-            viewport={'width': 1280, 'height': 800},  # Standard desktop size
-            # Real Chrome user agent to avoid bot detection
+            viewport={'width': 1280, 'height': 800},  # 标准桌面尺寸
+            # 真实 Chrome user agent 避免机器人检测
             user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         )
 
-        # Create new page (like opening a new tab)
+        # 创建新页面（像打开新标签页）
         self.page = await self.context.new_page()
 
-        # Set default timeout for all operations
+        # 设置所有操作的默认超时
         self.page.set_default_timeout(self.timeout)
 
-        logger.success("Browser started successfully")
+        logger.success("浏览器启动成功")
 
     async def close(self) -> None:
         """
-        Close the browser and cleanup all resources.
+        关闭浏览器并清理所有资源
 
-        Cleanup Sequence:
-            1. Close browser (all pages and contexts)
-            2. Stop Playwright library
-            3. Reset all references to None
+        清理序列:
+            1. 关闭浏览器（所有页面和上下文）
+            2. 停止 Playwright 库
+            3. 将所有引用重置为 None
 
-        Resource Management:
-            Proper cleanup prevents:
-            - Memory leaks from zombie browser processes
-            - Port conflicts from unclosed connections
-            - Zombie Chromium instances in task manager
+        资源管理:
+            正确的清理防止:
+            - 僵尸浏览器进程的内存泄漏
+            - 未关闭连接的端口冲突
+            - 任务管理器中的僵尸 Chromium 实例
 
-        Best Practice:
-            Always call close() after operations, even if errors occur:
+        最佳实践:
+            即使发生错误也要在操作后调用 close():
             ```python
             try:
                 await browser.start()
                 await browser.do_something()
             finally:
-                await browser.close()  # Always executed
+                await browser.close()  # 总是执行
             ```
 
-        Example:
+        示例:
             >>> await browser.start()
             >>> await browser.open_url("https://example.com")
-            >>> await browser.close()  # Cleanup
+            >>> await browser.close()  # 清理
         """
-        # Close browser if running
+        # 如果正在运行则关闭浏览器
         if self.browser:
             await self.browser.close()
             self.browser = None
 
-        # Stop Playwright library
+        # 停止 Playwright 库
         if self.playwright:
             await self.playwright.stop()
             self.playwright = None
 
-        # Reset all references
+        # 重置所有引用
         self.page = None
         self.context = None
 
-        logger.info("Browser closed")
+        logger.info("浏览器已关闭")
 
     # ------------------------------------------------------------------------
-    # Page Navigation Methods
+    # 页面导航方法
     # ------------------------------------------------------------------------
 
     async def open_url(self, url: str) -> str:
         """
-        Open a URL in the browser and wait for page load.
+        在浏览器中打开 URL 并等待页面加载
 
-        This method:
-            1. Navigates to the URL
-            2. Waits for 'networkidle' (page fully loaded)
-            3. Updates browser state (URL, title)
-            4. Takes initial screenshot
+        该方法:
+            1. 导航到 URL
+            2. 等待 'networkidle'（页面完全加载）
+            3. 更新浏览器状态（URL、标题）
+            4. 拍摄初始截图
 
-        Network Idle Explanation:
-            'networkidle' means:
-            - No network activity for 500ms
-            - All critical resources loaded
-            - JavaScript mostly complete
-            Alternative options: 'load', 'domcontentloaded'
+        Network Idle 说明:
+            'networkidle' 意味着:
+            - 500ms 内无网络活动
+            - 所有关键资源已加载
+            - JavaScript 大部分完成
+            其他选项: 'load', 'domcontentloaded'
 
-        Args:
-            url (str): The URL to open.
-                       Must be a valid URL with protocol.
-                       Example: "https://www.baidu.com"
+        参数:
+            url (str): 要打开的 URL
+                       必须是带协议的有效 URL
+                       示例: "https://www.baidu.com"
 
-        Returns:
-            str: Result message with URL and page title.
-                 Format: "已打开页面: {url}\n标题: {title}"
+        返回:
+            str: 包含 URL 和页面标题的结果消息
+                 格式: "已打开页面: {url}\n标题: {title}"
 
-        State Updates:
-            - current_state.url: Set to opened URL
-            - current_state.title: Set to page title
+        状态更新:
+            - current_state.url: 设置为打开的 URL
+            - current_state.title: 设置为页面标题
 
-        Example:
+        示例:
             >>> result = await browser.open_url("https://www.baidu.com")
             >>> print(result)
             "已打开页面: https://www.baidu.com\n标题: 百度一下"
         """
         if not self.page:
-            raise RuntimeError("Browser not started. Call start() first.")
+            raise RuntimeError("浏览器未启动。请先调用 start()")
 
-        logger.info(f"Opening URL: {url}")
+        logger.info(f"正在打开 URL: {url}")
 
-        # Navigate to URL
-        # wait_until='networkidle': Wait for page to fully load
+        # 导航到 URL
+        # wait_until='networkidle': 等待页面完全加载
         await self.page.goto(url, wait_until='networkidle')
 
-        # Update tracked state
-        self.current_state.url = url
-        self.current_state.title = await self.page.title()
+        # 更新追踪的状态
+        self.current_state.start_url = url
+        # 自动识别网站名称（从URL提取）
+        if "baidu" in url:
+            self.current_state.website = "百度"
+        elif "douban" in url:
+            self.current_state.website = "豆瓣"
+        elif "github" in url:
+            self.current_state.website = "GitHub"
+        elif "amazon" in url:
+            self.current_state.website = "亚马逊"
+        else:
+            # 从域名提取网站名
+            domain = url.split("//")[1].split("/")[0].split(".")[0]
+            self.current_state.website = domain
 
-        # Take initial screenshot for state tracking
+        # 拍摄初始截图用于状态追踪
         await self._save_screenshot("page_opened")
 
-        logger.info(f"Page opened: {self.current_state.title}")
+        logger.info(f"页面已打开: {url}")
 
-        return f"已打开页面: {url}\n标题: {self.current_state.title}"
+        return f"已打开页面: {url}\n网站: {self.current_state.website}"
 
     # ------------------------------------------------------------------------
-    # Element Interaction Methods
+    # 元素交互方法
     # ------------------------------------------------------------------------
 
     async def click(self, selector: str) -> str:
         """
-        Click an element on the page using CSS selector.
+        使用 CSS 选择器点击页面上的元素
 
-        CSS Selector Examples:
-            - "#submit": Element with id="submit"
-            - ".btn-primary": Element with class="btn-primary"
-            - "button[type='submit']": Button with type attribute
-            - "div > a:first-child": First anchor in div
+        CSS 选择器示例:
+            - "#submit": id="submit" 的元素
+            - ".btn-primary": class="btn-primary" 的元素
+            - "button[type='submit']": 有 type 属性的按钮
+            - "div > a:first-child": div 中第一个链接
 
-        Args:
-            selector (str): CSS selector to find the element.
-                            Must match exactly one visible element.
+        参数:
+            selector (str): 用于查找元素的 CSS 选择器
+                            必须精确匹配一个可见元素
 
-        Returns:
-            str: Result message.
-                 Success: "已点击元素: {selector}"
-                 Failure: "点击失败: {error message}"
+        返回:
+            str: 结果消息
+                 成功: "已点击元素: {selector}"
+                 失败: "点击失败: {错误消息}"
 
-        Behavior:
-            - Waits up to 5 seconds for element to appear
-            - Clicks the element
-            - Waits 0.5s for potential navigation
-            - Takes screenshot for state tracking
+        行为:
+            - 最多等待 5 秒让元素出现
+            - 点击元素
+            - 等待 0.5 秒用于可能的导航
+            - 拍摄截图用于状态追踪
 
-        Common Errors:
-            - Element not found: Selector doesn't match anything
-            - Element hidden: Element exists but not visible
-            - Multiple elements: Selector matches too many
+        常见错误:
+            - 元素未找到: 选择器不匹配任何内容
+            - 元素隐藏: 元素存在但不可见
+            - 多个元素: 选择器匹配太多元素
 
-        Example:
-            >>> # Click search button on Baidu
+        示例:
+            >>> # 点击百度搜索按钮
             >>> result = await browser.click("#su")
             >>> print(result)
             "已点击元素: #su"
         """
         if not self.page:
-            raise RuntimeError("Browser not started")
+            raise RuntimeError("浏览器未启动")
 
-        logger.info(f"Clicking element: {selector}")
+        logger.info(f"正在点击元素: {selector}")
 
         try:
-            # Wait for element to appear (5 second timeout)
-            await self.page.wait_for_selector(selector, timeout=5000)
+            # 等待元素存在于DOM（不要求可见）
+            await self.page.wait_for_selector(selector, timeout=5000, state="attached")
 
-            # Click the element
-            await self.page.click(selector)
+            # 点击元素（force=True 强制点击隐藏元素）
+            await self.page.click(selector, force=True)
 
-            # Wait for potential page changes
-            # (navigation, loading, JavaScript actions)
+            # 等待可能的页面变化
+            # （导航、加载、JavaScript 动作）
             await asyncio.sleep(0.5)
 
-            # Update step counter and take screenshot
+            # 更新步骤计数器并拍摄截图
             self.step_count += 1
             await self._save_screenshot(f"click_{self.step_count}")
 
             return f"已点击元素: {selector}"
 
         except Exception as e:
-            logger.error(f"Click failed: {e}")
+            logger.error(f"点击失败: {e}")
             return f"点击失败: {str(e)}"
 
     async def type_text(self, selector: str, text: str) -> str:
         """
-        Type text into an input field.
+        在输入框中输入文字
 
-        This method:
-            1. Waits for input element to appear
-            2. Clears existing text (if any)
-            3. Types new text character by character
-            4. Takes screenshot for verification
+        该方法:
+            1. 等待输入元素出现
+            2. 清除已有文字（如果有）
+            3. 逐字符输入新文字
+            4. 拍摄截图用于验证
 
-        Args:
-            selector (str): CSS selector for the input field.
-                            Examples: "#kw", "input[name='search']"
+        参数:
+            selector (str): 输入框的 CSS 选择器
+                            示例: "#kw", "input[name='search']"
 
-            text (str): Text content to type.
-                        Will be typed character by character.
+            text (str): 要输入的文字内容
+                        会逐字符输入
 
-        Returns:
-            str: Result message.
-                 Success: "已输入文字 '{text}' 到 {selector}"
-                 Failure: "输入失败: {error}"
+        返回:
+            str: 结果消息
+                 成功: "已输入文字 '{text}' 到 {selector}"
+                 失败: "输入失败: {错误}"
 
-        fill() vs type():
-            fill(): Clears field and sets text instantly
-            type(): Types character by character (more realistic)
-            We use fill() for simplicity and reliability.
+        fill() vs type() 的区别:
+            fill(): 清除字段并立即设置文字
+            type(): 逐字符输入（更真实）
+            我们使用 fill() 因为简单可靠
 
-        Example:
-            >>> # Type search query in Baidu
+        示例:
+            >>> # 在百度输入搜索词
             >>> result = await browser.type_text("#kw", "Python教程")
             >>> print(result)
             "已输入文字 'Python教程' 到 #kw"
         """
         if not self.page:
-            raise RuntimeError("Browser not started")
+            raise RuntimeError("浏览器未启动")
 
-        logger.info(f"Typing '{text}' into: {selector}")
+        logger.info(f"正在输入 '{text}' 到: {selector}")
 
         try:
-            # Wait for input element
-            await self.page.wait_for_selector(selector, timeout=5000)
+            # 等待输入元素存在于DOM（不要求可见）
+            await self.page.wait_for_selector(selector, timeout=5000, state="attached")
 
-            # Clear existing text and fill with new text
-            # fill() is faster and more reliable than type()
-            await self.page.fill(selector, text)
+            # 清除已有文字并填入新文字（force=True 强制操作隐藏元素）
+            await self.page.fill(selector, text, force=True)
 
-            # Update step counter and screenshot
+            # 更新步骤计数器并截图
             self.step_count += 1
             await self._save_screenshot(f"type_{self.step_count}")
 
             return f"已输入文字 '{text}' 到 {selector}"
 
         except Exception as e:
-            logger.error(f"Type failed: {e}")
+            logger.error(f"输入失败: {e}")
             return f"输入失败: {str(e)}"
 
     async def scroll(self, direction: str = "down", amount: int = 500) -> str:
         """
-        Scroll the page vertically.
+        垂直滚动页面
 
-        Scrolling is needed for:
-        - Loading lazy-loaded content (infinite scroll)
-        - Finding elements below viewport
-        - Viewing full page content
+        滚动用途:
+        - 加载懒加载内容（无限滚动）
+        - 查找视口下方的元素
+        - 查看完整页面内容
 
-        Args:
-            direction (str): Scroll direction.
-                             Options: "up" or "down"
-                             Default: "down"
+        参数:
+            direction (str): 滚动方向
+                             选项: "up"（上）或 "down"（下）
+                             默认: "down"
 
-            amount (int): Pixels to scroll.
-                          Default: 500 (moderate scroll)
-                          Larger values = bigger scroll
+            amount (int): 滚动的像素数
+                          默认: 500（适度滚动）
+                          更大值 = 更大滚动
 
-        Returns:
-            str: Result message.
+        返回:
+            str: 结果消息
                  "已滚动页面 {direction} {amount}px"
 
-        Implementation:
-            Uses JavaScript window.scrollBy() for reliable scrolling.
+        实现:
+            使用 JavaScript window.scrollBy() 实现可靠滚动
 
-        Example:
-            >>> # Scroll down to load more content
+        示例:
+            >>> # 向下滚动加载更多内容
             >>> result = await browser.scroll("down", 800)
             >>> print(result)
             "已滚动页面 down 800px"
         """
         if not self.page:
-            raise RuntimeError("Browser not started")
+            raise RuntimeError("浏览器未启动")
 
-        logger.info(f"Scrolling {direction} by {amount}px")
+        logger.info(f"正在滚动 {direction} {amount}px")
 
-        # Calculate scroll delta
+        # 计算滚动距离
         delta_y = amount if direction == "down" else -amount
 
-        # Execute JavaScript to scroll
+        # 执行 JavaScript 滚动
         await self.page.evaluate(f"window.scrollBy(0, {delta_y})")
 
-        # Wait for scroll to complete
+        # 等待滚动完成
         await asyncio.sleep(0.3)
 
-        # Track step and take screenshot
+        # 追踪步骤并拍摄截图
         self.step_count += 1
         await self._save_screenshot(f"scroll_{self.step_count}")
 
@@ -568,180 +543,180 @@ class PlaywrightBrowser:
 
     async def wait(self, seconds: float = 1.0) -> str:
         """
-        Wait for a specified duration.
+        等待指定时间
 
-        Waiting is useful for:
-        - Letting animations complete
-        - Waiting for AJAX content to load
-        - Avoiding rate limiting
+        等待用途:
+        - 让动画完成
+        - 等待 AJAX 内容加载
+        - 避免速率限制
 
-        Args:
-            seconds (float): Duration to wait in seconds.
-                             Default: 1.0 second
+        参数:
+            seconds (float): 等待的秒数
+                             默认: 1.0 秒
 
-        Returns:
-            str: Result message "已等待 {seconds} 秒"
+        返回:
+            str: 结果消息 "已等待 {seconds} 秒"
 
-        Note:
-            This is a simple sleep, not a smart wait.
-            For waiting for specific conditions, use:
+        注意:
+            这是简单的 sleep，不是智能等待
+            对于等待特定条件，请使用:
             - page.wait_for_selector()
             - page.wait_for_load_state()
 
-        Example:
-            >>> await browser.wait(2.0)  # Wait 2 seconds
+        示例:
+            >>> await browser.wait(2.0)  # 等待2秒
         """
-        logger.info(f"Waiting {seconds} seconds")
+        logger.info(f"正在等待 {seconds} 秒")
         await asyncio.sleep(seconds)
         return f"已等待 {seconds} 秒"
 
     # ------------------------------------------------------------------------
-    # Content Extraction Methods
+    # 内容提取方法
     # ------------------------------------------------------------------------
 
     async def extract_text(self, selector: str = "body") -> str:
         """
-        Extract text content from an element.
+        从元素提取文本内容
 
-        This method retrieves visible text from any element,
-        useful for getting page content for LLM context.
+        该方法从任何元素获取可见文本，
+        用于为 LLM 上下文获取页面内容。
 
-        Args:
-            selector (str): CSS selector for target element.
-                            Default: "body" (entire page)
-                            Examples: "#content", ".article", "h1"
+        参数:
+            selector (str): 目标元素的 CSS 选择器
+                            默认: "body"（整个页面）
+                            示例: "#content", ".article", "h1"
 
-        Returns:
-            str: Extracted text content.
-                 Truncated to 1000 chars if too long.
-                 Format: "{text}...[截断]" if truncated
-                 Error: "未找到元素: {selector}" if not found
+        返回:
+            str: 提取的文本内容
+                 如果太长则截断到 1000 字符
+                 格式: "{text}...[截断]" 如果截断
+                 错误: "未找到元素: {selector}" 如果未找到
 
-        Truncation Logic:
-            LLM context windows are limited.
-            Truncating prevents excessive token usage.
-            1000 chars ≈ 500 tokens (rough estimate).
+        截断逻辑:
+            LLM 上下文窗口有限
+            截断防止过多的 token 使用
+            1000 字符 ≈ 500 tokens（粗略估计）
 
-        Example:
-            >>> # Get entire page text
+        示例:
+            >>> # 获取整个页面的文本
             >>> text = await browser.extract_text()
-            >>> print(text[:100])  # First 100 chars
+            >>> print(text[:100])  # 前100字符
 
-            >>> # Get specific element text
+            >>> # 获取特定元素的文本
             >>> title = await browser.extract_text("h1")
             >>> print(title)
         """
         if not self.page:
-            raise RuntimeError("Browser not started")
+            raise RuntimeError("浏览器未启动")
 
-        logger.info(f"Extracting text from: {selector}")
+        logger.info(f"正在从 {selector} 提取文本")
 
         try:
-            # Query for element
+            # 查询元素
             element = await self.page.query_selector(selector)
 
             if element:
-                # Get inner text (visible text content)
+                # 获取内部文本（可见文本内容）
                 text = await element.inner_text()
 
-                # Truncate if too long (save memory)
+                # 如果太长则截断（节省内存）
                 if len(text) > 1000:
                     text = text[:1000] + "...[截断]"
 
-                # Store in state
-                self.current_state.content = text
+                # 存储到完成界面描述
+                self.current_state.completion_interface = text[:200]
 
                 return text
             else:
                 return f"未找到元素: {selector}"
 
         except Exception as e:
-            logger.error(f"Extract text failed: {e}")
+            logger.error(f"提取文本失败: {e}")
             return f"提取失败: {str(e)}"
 
     async def find_elements(self, selector: str) -> List[Dict[str, str]]:
         """
-        Find all elements matching a CSS selector.
+        查找所有匹配 CSS 选择器的元素
 
-        This method returns a list of element information,
-        useful for finding multiple similar elements (links, buttons, etc).
+        该方法返回元素信息列表，
+        用于查找多个相似元素（链接、按钮等）。
 
-        Args:
-            selector (str): CSS selector to match.
-                            Examples: "a" (all links), ".item" (all items)
+        参数:
+            selector (str): 要匹配的 CSS 选择器
+                            示例: "a"（所有链接）, ".item"（所有项目）
 
-        Returns:
-            List[Dict[str, str]]: List of element info.
-                Each dict contains:
-                - index: Position in list (0, 1, 2, ...)
-                - text: Element's text content (truncated)
-                - href: Link URL (if element is <a>)
+        返回:
+            List[Dict[str, str]]: 元素信息列表
+                每个字典包含:
+                - index: 列表中的位置（0, 1, 2, ...）
+                - text: 元素的文本内容（截断）
+                - href: 链接 URL（如果元素是 <a>）
 
-        Limit:
-            Returns max 10 elements to prevent memory issues.
+        限制:
+            最多返回 10 个元素以防止内存问题
 
-        Example:
-            >>> # Find all links on page
+        示例:
+            >>> # 查找页面上的所有链接
             >>> links = await browser.find_elements("a")
             >>> for link in links:
             ...     print(f"{link['index']}: {link['text']}")
         """
         if not self.page:
-            raise RuntimeError("Browser not started")
+            raise RuntimeError("浏览器未启动")
 
-        # Query all matching elements
+        # 查询所有匹配的元素
         elements = await self.page.query_selector_all(selector)
         results = []
 
-        # Extract info from each element (limit to 10)
+        # 从每个元素提取信息（限制为10个）
         for i, element in enumerate(elements[:10]):
-            # Get text content
+            # 获取文本内容
             text = await element.inner_text()
 
-            # Get href attribute (for links)
+            # 获取 href 属性（用于链接）
             href = await element.get_attribute('href') or ''
 
             results.append({
                 "index": i,
-                "text": text[:100],  # Truncate
+                "text": text[:100],  # 截断
                 "href": href
             })
 
         return results
 
     # ------------------------------------------------------------------------
-    # Visual Capture Methods
+    # 视觉捕获方法
     # ------------------------------------------------------------------------
 
     async def screenshot(self, name: str = None) -> str:
         """
-        Take a screenshot of the current page.
+        拍摄当前页面的截图
 
-        Screenshots are used for:
-        - Debugging: See what agent sees
-        - Verification: Confirm task completion
-        - State Graph: Visual state tracking
+        截图用途:
+        - 调试: 看到代理看到的
+        - 验证: 确认任务完成
+        - 状态图: 视觉状态追踪
 
-        Args:
-            name (str): Optional filename prefix.
-                        Default: "screenshot_{step_count}"
+        参数:
+            name (str): 可选的文件名前缀
+                        默认: "screenshot_{step_count}"
 
-        Returns:
-            str: Result message with file path.
+        返回:
+            str: 包含文件路径的结果消息
                  "截图已保存: {path}"
 
-        File Naming:
-            Format: "{name}_{timestamp}.png"
-            Timestamp ensures unique filenames.
+        文件命名:
+            格式: "{name}_{timestamp}.png"
+            时间戳确保文件名唯一
 
-        Example:
-            >>> # Take named screenshot
+        示例:
+            >>> # 拍摄命名截图
             >>> result = await browser.screenshot("final_result")
             >>> print(result)
             "截图已保存: ./screenshots/final_result_1234567890.png"
         """
         if not self.page:
-            raise RuntimeError("Browser not started")
+            raise RuntimeError("浏览器未启动")
 
         filename = name or f"screenshot_{self.step_count}"
         path = await self._save_screenshot(filename)
@@ -750,158 +725,200 @@ class PlaywrightBrowser:
 
     async def _save_screenshot(self, name: str) -> str:
         """
-        Internal method to save screenshot to disk.
+        保存截图到磁盘（纯 Playwright PNG 格式）
 
-        This is a private helper method called by other methods.
-        It handles file naming, saving, and state updates.
+        参数:
+            name (str): 文件名前缀
 
-        Args:
-            name (str): Filename prefix.
-
-        Returns:
-            str: Full path to saved screenshot.
-
-        File Format:
-            {name}_{timestamp}.png
-            PNG is chosen for quality and compatibility.
+        返回:
+            str: 保存截图的完整路径
         """
         if not self.page:
             return ""
 
-        # Generate unique filename with timestamp
         timestamp = asyncio.get_event_loop().time()
         filename = f"{name}_{int(timestamp)}.png"
         path = self.screenshot_dir / filename
 
-        # Save screenshot
         await self.page.screenshot(path=str(path))
 
-        # Update state for tracking
+        # 更新状态中的截图路径
         self.current_state.screenshot_path = str(path)
-        logger.debug(f"Screenshot saved: {path}")
+        # 更新当前 URL 和标题
+        self.current_state.url = self.page.url
+        try:
+            self.current_state.title = await self.page.title()
+        except Exception:
+            self.current_state.title = ""
+
+        logger.debug(f"截图已保存: {path}")
 
         return str(path)
 
     # ------------------------------------------------------------------------
-    # Keyboard Methods
+    # 键盘方法
     # ------------------------------------------------------------------------
 
     async def press_key(self, key: str) -> str:
         """
-        Press a keyboard key.
+        按下键盘按键
 
-        Useful for:
-        - Submitting forms (Enter)
-        - Canceling operations (Escape)
-        - Navigation (Tab, Arrow keys)
+        用途:
+        - 提交表单（Enter）
+        - 取消操作（Escape）
+        - 导航（Tab、方向键）
 
-        Args:
-            key (str): Key to press.
-                       Examples: "Enter", "Escape", "Tab"
-                       Special keys are named, regular keys are just the character.
+        参数:
+            key (str): 要按下的按键
+                       示例: "Enter", "Escape", "Tab"
+                       特殊按键有名称，普通按键就是字符
 
-        Returns:
-            str: Result message "已按下按键: {key}"
+        返回:
+            str: 结果消息 "已按下按键: {key}"
 
-        Common Keys:
-            - Enter: Submit form, confirm action
-            - Escape: Cancel, close dialog
-            - Tab: Move focus to next element
-            - ArrowUp/Down: Navigation
+        常用按键:
+            - Enter: 提交表单、确认动作
+            - Escape: 取消、关闭对话框
+            - Tab: 移动焦点到下一个元素
+            - ArrowUp/Down: 导航
 
-        Example:
-            >>> # Submit search form
+        示例:
+            >>> # 提交搜索表单
             >>> await browser.type_text("#search", "query")
             >>> await browser.press_key("Enter")
         """
         if not self.page:
-            raise RuntimeError("Browser not started")
+            raise RuntimeError("浏览器未启动")
 
         await self.page.keyboard.press(key)
-        logger.info(f"Pressed key: {key}")
+        logger.info(f"已按下按键: {key}")
 
         return f"已按下按键: {key}"
 
     # ------------------------------------------------------------------------
-    # State Methods
+    # 状态方法
     # ------------------------------------------------------------------------
 
     async def get_current_state(self) -> Dict[str, Any]:
         """
-        Get the current browser state as a dictionary.
+        获取当前浏览器状态的字典
 
-        This method provides a complete snapshot of browser state,
-        useful for LLM context and state tracking.
-
-        Returns:
-            Dict[str, Any]: State dictionary containing:
-                - url: Current page URL
-                - title: Page title
-                - content_preview: Page text (truncated)
-                - screenshot_path: Path to latest screenshot
-
-        Use Case:
-            LLM needs this info to decide next action.
-
-        Example:
-            >>> state = await browser.get_current_state()
-            >>> print(f"At: {state['url']}")
-            >>> print(f"Title: {state['title']}")
+        返回:
+            Dict[str, Any]: 状态字典
         """
         if not self.page:
-            return {"error": "Browser not started"}
+            return {"error": "浏览器未启动"}
 
-        # Get current URL
-        url = self.page.url
+        current_url = self.page.url
+        page_title = await self.page.title()
 
-        # Get page title
-        title = await self.page.title()
-
-        # Get body text preview
-        body_text = await self.extract_text("body")
-
-        # Update tracked state
-        self.current_state.url = url
-        self.current_state.title = title
-        self.current_state.content = body_text[:500]
+        # 更新状态
+        self.current_state.url = current_url
+        self.current_state.title = page_title
+        self.current_state.completion_interface = f"页面标题: {page_title}"
 
         return {
-            "url": url,
-            "title": title,
-            "content_preview": body_text[:500],
-            "screenshot_path": self.current_state.screenshot_path
+            "website": self.current_state.website,
+            "start_url": self.current_state.start_url,
+            "url": self.current_state.url,
+            "title": self.current_state.title,
+            "prompt": self.current_state.prompt,
+            "completion_interface": self.current_state.completion_interface,
+            "screenshot_path": self.current_state.screenshot_path,
         }
 
     # ------------------------------------------------------------------------
-    # Advanced Methods
+    # 页面分析方法（让 Agent 能看见页面）
+    # ------------------------------------------------------------------------
+
+    async def get_interactive_elements(self) -> List[Dict[str, str]]:
+        """
+        获取页面上所有可交互元素（输入框、按钮、链接等）
+
+        返回元素的 selector、类型、文本等信息，供 LLM 决策使用
+        """
+        if not self.page:
+            return []
+
+        elements = []
+        selectors = [
+            ("input[type='text']", "text_input"),
+            ("input[type='search']", "search_input"),
+            ("input:not([type])", "text_input"),
+            ("button", "button"),
+            ("[role='button']", "button"),
+            ("a[href]", "link"),
+            ("[onclick]", "clickable"),
+            ("select", "dropdown"),
+        ]
+
+        for selector, elem_type in selectors:
+            items = await self.page.query_selector_all(selector)
+            for i, elem in enumerate(items[:5]):  # 每类最多5个
+                try:
+                    # 获取元素属性
+                    id_attr = await elem.get_attribute("id") or ""
+                    class_attr = await elem.get_attribute("class") or ""
+                    text = await elem.inner_text() if elem_type in ["button", "link", "clickable"] else ""
+                    placeholder = await elem.get_attribute("placeholder") or ""
+                    name_attr = await elem.get_attribute("name") or ""
+
+                    # 构建 selector
+                    best_selector = ""
+                    if id_attr:
+                        best_selector = f"#{id_attr}"
+                    elif name_attr:
+                        best_selector = f"[name='{name_attr}']"
+                    elif class_attr:
+                        first_class = class_attr.split()[0]
+                        best_selector = f".{first_class}"
+                    else:
+                        best_selector = selector
+
+                    elements.append({
+                        "selector": best_selector,
+                        "type": elem_type,
+                        "id": id_attr,
+                        "class": class_attr[:50],
+                        "text": text[:50],
+                        "placeholder": placeholder[:50],
+                        "name": name_attr,
+                    })
+                except:
+                    continue
+
+        return elements
+
+    # ------------------------------------------------------------------------
+    # 高级方法
     # ------------------------------------------------------------------------
 
     async def execute_script(self, script: str) -> Any:
         """
-        Execute JavaScript in the browser.
+        在浏览器中执行 JavaScript
 
-        This allows custom JavaScript execution for:
-        - Advanced DOM manipulation
-        - Custom data extraction
-        - Complex interactions not covered by standard methods
+        用于:
+        - 高级 DOM 操作
+        - 自定义数据提取
+        - 标准方法无法覆盖的复杂交互
 
-        Args:
-            script (str): JavaScript code to execute.
-                          Can return values.
+        参数:
+            script (str): 要执行的 JavaScript 代码
+                          可以返回值
 
-        Returns:
-            Any: Return value from JavaScript (if any).
+        返回:
+            Any: JavaScript 的返回值（如果有）
 
-        Security Note:
-            Use with caution - can modify page arbitrarily.
+        安全提示:
+            谨慎使用 - 可以任意修改页面
 
-        Example:
-            >>> # Get all link URLs
+        示例:
+            >>> # 获取所有链接 URL
             >>> links = await browser.execute_script(
             ...     "Array.from(document.querySelectorAll('a')).map(a => a.href)"
             ... )
         """
         if not self.page:
-            raise RuntimeError("Browser not started")
+            raise RuntimeError("浏览器未启动")
 
         return await self.page.evaluate(script)
